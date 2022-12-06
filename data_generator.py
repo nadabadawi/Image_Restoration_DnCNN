@@ -97,8 +97,8 @@ def gen_patches(file_name):
     # read image
     img = cv2.imread(file_name, 1)  # RGB scale
     h, w, l = img.shape
-
-    print("Height: ", h, " Width: ", w, ", Length: ", l)
+    # show(img)
+    # print("Height: ", h, " Width: ", w, ", Length: ", l)
     patches = []
     for s in scales:
         h_scaled, w_scaled = int(h*s),int(w*s)
@@ -106,12 +106,32 @@ def gen_patches(file_name):
         # extract patches
         for i in range(0, h_scaled-patch_size+1, stride):
             for j in range(0, w_scaled-patch_size+1, stride):
-                x = img_scaled[i:i+patch_size, j:j+patch_size]
+                x = img_scaled[i:i+patch_size, j:j+patch_size, :]
+                
+                # temp = x
+                # if (i == 0 and j == 0):
+                #     print("Here: ", x)
                 #patches.append(x)        
                 # data aug
                 # print("X", x)
-                
+                # if np.mean(x) == 255:
+                #     continue
+                    # print('***************All white************************')
+                # else:
+                #     print('Not all white')
+                # for a in x:
+                #     print("a: ", a)
+                    # for b in a:
+                        # print("B: ", b)
+                    # if np.mean(i) != 255.0:
+                #         print("Before X: ", i)
+                #         print("np.mean:   ----   ", np.mean(i))
+                #         print("After: ", i)
+                # if np.mean(temp) != 255:
                 for k in range(0, aug_times):
+                    # if np.mean(temp) == 255:
+                    #     continue
+                        # x = img_scaled[i:i+patch_size, j:j+patch_size]
                     x_aug = data_aug(x, mode=np.random.randint(0,8))
                     patches.append(x_aug)
     # print("Patches: ", len(patches))
@@ -157,6 +177,7 @@ def datagenerator(data_dir='data/Train400',verbose=False):
 if __name__ == '__main__':   
 
     data = datagenerator(data_dir='data/Train400')
+    # show()
     
 
 #    print('Shape of result = ' + str(res.shape))

@@ -27,6 +27,8 @@ import argparse
 import re
 import os, glob, datetime
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import tensorflow as tf
 from tensorflow.keras.layers import  Input,Conv2D,BatchNormalization,Activation,Subtract, Conv3D
 from tensorflow.keras.models import Model, load_model
@@ -35,13 +37,17 @@ from tensorflow.keras.optimizers import Adam
 import data_generator as dg
 import tensorflow.keras.backend as K
 
+tf.config.list_physical_devices("GPU")
+[PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
+
 ## Params
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', default='DnCNN', type=str, help='choose a type of model')
 parser.add_argument('--batch_size', default=128, type=int, help='batch size')
 parser.add_argument('--train_data', default='data/Train400', type=str, help='path of train data')
+parser.add_argument('--val_data', default= 'data/newimgs', type=str, help='path of validation data')
 parser.add_argument('--sigma', default=25, type=int, help='noise level')
-parser.add_argument('--epoch', default=300, type=int, help='number of train epoches')
+parser.add_argument('--epoch', default=100, type=int, help='number of train epoches')
 parser.add_argument('--lr', default=1e-3, type=float, help='initial learning rate for Adam')
 parser.add_argument('--save_every', default=1, type=int, help='save model at every x epoches')
 args = parser.parse_args()
@@ -112,35 +118,39 @@ def lr_schedule(epoch):
         lr = initial_lr/20 
     log('current learning rate is %2.8f' %lr)
     return lr
-
-def train_datagen(epoch_iter=2000,epoch_num=300,batch_size=128,data_dir=args.train_data):
+val_y = '\0'
+def train_datagen(epoch_iter=800,epoch_num=100,batch_size=128,data_dir=args.train_data):
     while(True):
         n_count = 0
         if n_count == 0:
-            #print(n_count)
             xs = dg.datagenerator(data_dir)
             assert len(xs)%args.batch_size ==0, \
             log('make sure the last iteration has a full batchsize, this is important if you use batch normalization!')
             xs = xs.astype('float32')/255.0
-            # print("XS.shape: ", xs.shape[0])
             indices = list(range(xs.shape[0]))
             n_count = 1
+        
         for _ in range(epoch_num):
             np.random.shuffle(indices)    # shuffle
             for i in range(0, len(indices), batch_size):
                 batch_x = xs[indices[i:i+batch_size]]
                 noise =  np.random.normal(0, args.sigma/255.0, batch_x.shape)    # noise
                 #noise =  K.random_normal(ge_batch_y.shape, mean=0, stddev=args.sigma/255.0)
-                batch_y = batch_x + noise 
+                batch_y = batch_x + noise
                 yield batch_y, batch_x
-        
+    
+
 # define loss
 def sum_squared_error(y_true, y_pred):
     #return K.mean(K.square(y_pred - y_true), axis=-1)
     #return K.sum(K.square(y_pred - y_true), axis=-1)/2
     return K.sum(K.square(y_pred - y_true))/2
-    
+
+def psnr (y_true, y_pred):
+    return tf.image.psnr(y_true, y_pred, max_val=1.0)
+
 if __name__ == '__main__':
+
     # model selection
     model = DnCNN(depth=17,filters=64,image_channels=3,use_bnorm=True)
     model.summary()
@@ -152,7 +162,7 @@ if __name__ == '__main__':
         model = load_model(os.path.join(save_dir,'model_%03d.hdf5'%initial_epoch), compile=False)
     
     # compile the model
-    model.compile(optimizer=Adam(0.001), loss=sum_squared_error)
+    model.compile(optimizer=Adam(0.001), loss=sum_squared_error, metrics = psnr)
     
     # use call back functions
     checkpointer = ModelCheckpoint(os.path.join(save_dir,'model_{epoch:03d}.hdf5'), 
@@ -160,6 +170,30 @@ if __name__ == '__main__':
     csv_logger = CSVLogger(os.path.join(save_dir,'log.csv'), append=True, separator=',')
     lr_scheduler = LearningRateScheduler(lr_schedule)
     
-    history = model.fit(train_datagen(batch_size=args.batch_size),
-                steps_per_epoch=2000, epochs=args.epoch, verbose=1, initial_epoch=initial_epoch,
+    history = model.fit(train_datagen(batch_size=args.batch_size), #validation_data = val_datagen(batch_size=3),
+                steps_per_epoch=800, epochs=args.epoch, verbose=1, initial_epoch=initial_epoch,
                 callbacks=[checkpointer,csv_logger,lr_scheduler])
+
+    # Get training and test loss histories
+    training_psnr = history.history['psnr']
+    training_loss = history.history['loss']
+    epoch_count = range(1, len(training_psnr) + 1)
+
+    # Visualize loss history
+    plt.figure()
+    plt.plot(epoch_count, training_psnr, 'r--')
+    # plt.plot(epoch_count, training_loss, 'b-')
+    plt.legend(['Training PSNR', 'Validation PSNR'])
+    plt.xlabel('Epoch')
+    plt.ylabel('PSNR')
+    plt.show()
+
+    # Visualize loss history
+    plt.figure()
+    # plt.plot(epoch_count, training_psnr, 'r--')
+    plt.plot(epoch_count, training_loss, 'b-')
+    plt.legend(['Training Loss', 'Validation Loss'])
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.show()
+    
